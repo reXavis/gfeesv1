@@ -111,7 +111,7 @@ def tvl_filter(df: pd.DataFrame, tvl_window: int, tvl_sigma: float) -> pd.Series
 
 def compute_volatility(volatility_gamma: float, df: pd.DataFrame) -> pd.Series:
     """
-    Compute EWM volatility of the price given gamma
+    Compute EWMA volatility of the price given gamma
     """
     price = df['price']
 
@@ -150,7 +150,7 @@ def vol_to_tvl_ratio(df: pd.DataFrame) -> pd.Series:
 #     return list(lags), correlations
 
 if __name__ == "__main__":
-    config = read_fee_config("fee_config.json")
+    config = read_fee_config("./configs/fee_config.json")
     df = read_pool_snapshots(config["pool_address"],config["snapshot_dir"])
     df['volatility'] = compute_volatility(config["volatility_gamma"], df)
     df['tvl_filtered'] = tvl_filter(df, config["tvl_window"], config["tvl_sigma"])

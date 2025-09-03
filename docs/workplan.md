@@ -8,7 +8,7 @@ https://api.goldsky.com/api/public/project_cm7b8gxuihm5p01rugn550kyw/subgraphs/l
 Doesnt expose Volume?
 
 ProjectX
-https://api.goldsky.com/api/public/project_cmbbm2iwckb1b01t39xed236t/subgraphs/uniswap-v3-hyperevm-position/prod/gn
+https://api.goldsky.com/api/public/prgitoject_cmbbm2iwckb1b01t39xed236t/subgraphs/uniswap-v3-hyperevm-position/prod/gn
 
 KittenSwap
 No

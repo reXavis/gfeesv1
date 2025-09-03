@@ -1,25 +1,8 @@
 import os
 import json
-from requests import get, post
 import pandas as pd
+from requests import post
 import time
-
-def read_ingestor_config(config_file: str) -> dict:
-    """Read and parse the ingestor configuration file.
-    
-    Args:
-        config_file (str): Path to the config JSON file
-        
-    Returns:
-        dict: Configuration parameters
-        
-    Raises:
-        FileNotFoundError: If config file does not exist
-    """
-    if not os.path.exists(config_file):
-        raise FileNotFoundError(f"Config file not found: {config_file}")
-    with open(config_file, 'r') as f:
-        return json.load(f)
 
 def fetch_pool_addresses(token0: str, token1: str, graph_url: str) -> list:
     """Fetch all pool addresses for a token pair from the graph.
@@ -223,93 +206,88 @@ def fetch_pool_price(pool_address: str, graph_url: str) -> float:
         print(f"Error fetching price for pool {pool_address}: {str(e)}")
         return 0.0
 
-def price_filtering(df: pd.DataFrame) -> pd.DataFrame:
+def fetch_pool_tvl(pool_address: str, graph_url: str) -> float:
+    """Fetch TVL for a pool from the subgraph.
+    
+    Args:
+        pool_address (str): Pool address to fetch TVL for
+        graph_url (str): Graph URL
+        
+    Returns:
+        float: TVL in USD, or 0.0 if not available or error
     """
-    Filter the price data by removing outliers
-    """
-    df = df[df['price'] > 0]
-    df = df[df['price'] < 100000000000]
-    return df
-
-def save_data(delta_price: float, df: pd.DataFrame):
-    """
-    Save the timestamp, delta price, each pool price and volume
-    """
-    timestamp = str(int(time.time()))
-    with open(f'data/dex/{timestamp}.csv', 'a') as f:
-        f.write(f"{delta_price}\n")
-        for index, row in df.iterrows():
-            f.write(f"{row['subgraph_name']},{row['pool_address']},{row['price']},{row['volume_24h_usd']}\n")
- 
-def calculate_weighted_price(df: pd.DataFrame) -> float:
-    """Calculate price weighted by volume contribution of each pool.
+    try:
+        # Remove /query suffix if present and add it back
+        if graph_url.endswith('/query'):
+            url = graph_url
+        else:
+            url = f"{graph_url}/query" if not graph_url.endswith('/gn') else graph_url
             
-        Args:
-        df (pd.DataFrame): DataFrame containing pool prices and volumes
-                
-      Returns:
-        float: Volume-weighted average price across pools
-    """
-    delta_price = 0.0
-    for index, row in df.iterrows():
-        if row['price'] > 0 and row['volume_24h_usd'] > 0:
-            ratio_volume_24h_usd = row['volume_24h_usd'] / sum(df['volume_24h_usd'])
-            delta_price += row['price'] * ratio_volume_24h_usd
-    return delta_price
+        # Query for pool TVL using pool address
+        query = (
+            "query($pool:String!){\n"
+            "  pools(where: { id: $pool }){\n"
+            "    id\n"
+            "    totalValueLockedUSD\n"
+            "  }\n"
+            "}"
+        )
+        
+        response = post(url, json={"query": query, "variables": {"pool": pool_address}})
+        response.raise_for_status()  # Raise exception for HTTP errors
+        
+        data = response.json()
+        
+        # Check for GraphQL errors
+        if "errors" in data:
+            raise Exception(f"GraphQL errors: {data['errors']}")
+            
+        # Check if we have pools data
+        if "data" not in data or "pools" not in data["data"]:
+            raise Exception(f"Unexpected response format: {data}")
+            
+        pools = data["data"]["pools"]
+        
+        if not pools:
+            print(f"Pool {pool_address} not found for TVL query")
+            return 0.0
+            
+        # Get TVL from the first pool found
+        pool = pools[0]
+        val = pool.get("totalValueLockedUSD")
+        return float(val) if val is not None else 0.0
+        
+    except Exception as e:
+        print(f"Error fetching TVL for pool {pool_address}: {str(e)}")
+        return 0.0
+
+def read_gliquid_config(config_file: str) -> dict:
+    if not os.path.exists(config_file):
+        raise FileNotFoundError(f"Config file not found: {config_file}")
+    with open(config_file, 'r') as f:
+        return json.load(f)
 
 if __name__ == "__main__":
-    # Load config and create output directory
-    config = read_ingestor_config("./configs/ingestor_config.json")
- 
+    config = read_gliquid_config("./configs/gliquid_config.json")
+
     while True:
-        # Store pool info in a list first
-        pool_data = []
-        
-        for subgraph_name, graph_url in config["graph_url_list"].items():
-            try:
-                pool_addresses = fetch_pool_addresses(config["token0"], config["token1"], graph_url)
-                if pool_addresses:
-                    for pool_address in pool_addresses:
-                        pool_data.append({
-                            'pool_address': pool_address,
-                            'subgraph_name': subgraph_name,
-                            'graph_url': graph_url,
-                            'volume_24h_usd': 0.0,
-                            "price": 0.0
-                        })
-                else:
-                    print(f"✗ No pools found for {subgraph_name}")
-            except Exception as e:
-                print(f"✗ Error fetching pools from {subgraph_name}: {str(e)}")
+        pool_addresses = fetch_pool_addresses(config["token0"], config["token1"], config["subgraph_url"])
+        volume24h = []
+        price = []
+        tvl = []
 
-        # Create DataFrame from list
-        df = pd.DataFrame(pool_data)
-        
-        # Fetch volumes for each pool
-        for index, row in df.iterrows():
-            try:
-                pool_volume24h = fetch_pool_volume24h(row['pool_address'], row['graph_url'])
-                df.at[index, 'volume_24h_usd'] = pool_volume24h
-            except Exception as e:
-                df.at[index, 'volume_24h_usd'] = 0.0
-                
-        # Fetch prices for each pool
-        for index, row in df.iterrows():
-            try:
-                pool_price = fetch_pool_price(row['pool_address'], row['graph_url'])
-                df.at[index, 'price'] = pool_price*10e11
-            except Exception as e:
-                df.at[index, 'price'] = 0.0
-                
-        # Filter the price data by removing outliers
-        df = price_filtering(df)
-            
-        delta_price = calculate_weighted_price(df)
+        for pool_address in pool_addresses:
+            volume24h.append(fetch_pool_volume24h(pool_address, config["subgraph_url"]))
+            price.append(fetch_pool_price(pool_address, config["subgraph_url"])*10e11)
+            tvl.append(fetch_pool_tvl(pool_address, config["subgraph_url"]))
 
-        if not os.path.exists('data/dex'):
-            os.makedirs('data/dex')
+        df = pd.DataFrame(pool_addresses, columns=["pool_address"])
+        df["volume24h"] = volume24h
+        df["price"] = price
+        df["tvl"] = tvl
 
-        save_data(delta_price, df)
-        
-        # Sleep for pull_interval seconds before next iteration
+        if not os.path.exists('data/gliquid'):
+            os.makedirs('data/gliquid')
+        df.to_csv(f"data/gliquid/{int(time.time())}.csv", index=False)
+
         time.sleep(config["pull_interval"])
