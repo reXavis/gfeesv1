@@ -231,14 +231,16 @@ def price_filtering(df: pd.DataFrame) -> pd.DataFrame:
     df = df[df['price'] < 100000000000]
     return df
 
-def save_data(delta_price: float):
+def save_data(delta_price: float, df: pd.DataFrame):
     """
-    Save the current timestamp and delta price
+    Save the timestamp, delta price, each pool price and volume
     """
     timestamp = str(int(time.time()))
-    with open('data/dex/dex_ingestor.csv', 'a') as f:
-        f.write(f"{timestamp},{delta_price}\n")
-
+    with open(f'data/dex/{timestamp}.csv', 'a') as f:
+        f.write(f"{delta_price}\n")
+        for index, row in df.iterrows():
+            f.write(f"{row['subgraph_name']},{row['pool_address']},{row['price']},{row['volume_24h_usd']}\n")
+ 
 if __name__ == "__main__":
     # Load config and create output directory
     config = read_ingestor_config("ingestor_config.json")
@@ -295,7 +297,7 @@ if __name__ == "__main__":
         if not os.path.exists('data/dex'):
             os.makedirs('data/dex')
 
-        save_data(delta_price)
+        save_data(delta_price, df)
         
         # Sleep for pull_interval seconds before next iteration
         time.sleep(config["pull_interval"])
