@@ -1,7 +1,7 @@
 {
-    "pool_address": "0xd391259888fe4599e8011eea5e27b93a9dc74920",
-    "snapshot_dir": "/home/xavi/code/liquidityv2/data/json",
-    "volatility_gamma": 0.95,
+    "data_dir": "./data",
+    "volatility_gamma": 0.98,
     "tvl_window": 11,
-    "tvl_sigma": 3
+    "tvl_sigma": 3,
+    "delta_delta_price_gamma": 0.75
 }

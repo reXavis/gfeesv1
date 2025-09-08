@@ -18,7 +18,7 @@ def calculate_price_from_sqrt_price(sqrt_price_str):
     price = (sqrt_price / (2**96)) ** 2
     return price
 
-def read_pool_snapshots(pool_address,snapshot_dir):
+
     """
     Read all snapshot files for a given pool address and extract key metrics.
     
@@ -86,7 +86,6 @@ def read_pool_snapshots(pool_address,snapshot_dir):
     df = df.sort_values('timestamp').reset_index(drop=True)
     
     return df
-
  
 def read_fee_config(config_file: str) -> dict:
     # read the config file
@@ -118,9 +117,8 @@ def compute_volatility(volatility_gamma: float, df: pd.DataFrame) -> pd.Series:
     # compute the returns
     returns = np.log(price / price.shift(1))
 
-    # compute volatility and multiply by 10000 for easier visualization
     # check docs on complex formula
-    return 10000*np.sqrt(returns.pow(2).ewm(alpha=1-volatility_gamma,adjust=False).mean())
+    return 100000*np.sqrt(returns.pow(2).ewm(alpha=1-volatility_gamma,adjust=False).mean())
     
 def vol_to_tvl_ratio(df: pd.DataFrame) -> pd.Series:
     """
@@ -128,47 +126,115 @@ def vol_to_tvl_ratio(df: pd.DataFrame) -> pd.Series:
     """
     return df['volume_24h_usd'] / df['tvl_filtered']
 
-# def check_lag(df: pd.DataFrame) -> float:
-#     volatility = df['volatility']
-#     price = df['price']
-#     returns = (np.log(price / price.shift(1)))*10000
-#     lags = range(0,1000)
-#     correlations = []
+def read_data(data_dir: str) -> pd.DataFrame:
+    """
+    Read the data from the data directory and create separate dataframes for each pool
+    """
+    # Get all CSV files from gliquid directory
+    gliquid_dir = os.path.join(data_dir, "gliquid")
+    if not os.path.exists(gliquid_dir):
+        raise FileNotFoundError(f"Directory not found: {gliquid_dir}")
+        
+    # Dictionary to store data for each pool
+    pool_data = {}
     
-#     for lag in lags:
-#         if lag < 0:
-#             corr = returns.corr(volatility.shift(-lag))  # returns forward 
-#         else:
-#             corr = returns.corr(volatility.shift(lag))   # returns behind
-#         correlations.append(corr)
+    for filename in os.listdir(gliquid_dir):
+        if filename.endswith('.csv'):
+            # Extract timestamp from filename
+            timestamp = int(filename.split('.')[0])
+            
+            # Read the CSV file
+            file_path = os.path.join(gliquid_dir, filename)
+            df_temp = pd.read_csv(file_path)
+            
+            # Process each pool in the CSV
+            for _, row in df_temp.iterrows():
+                pool_address = row['pool_address']
+                
+                if pool_address not in pool_data:
+                    pool_data[pool_address] = []
+                    
+                pool_data[pool_address].append({
+                    'timestamp': timestamp,
+                    'tvl_usd': row['tvl'],
+                    'volume_24h_usd': row['volume24h'],
+                    'price': row['price']
+                })
+    
+    # Create separate DataFrames for each pool and store in dictionary
+    pool_dfs = {}
+    for pool_address, data in pool_data.items():
+        df = pd.DataFrame(data)
+        df = df.sort_values('timestamp').reset_index(drop=True)
+        pool_dfs[pool_address] = df
 
-#     ccf_df = pd.DataFrame({'lag': lags, 'correlation': correlations})
+    return pool_dfs
 
-#     # Find the lag with maximum correlation
-#     best_lag = ccf_df.loc[ccf_df['correlation'].idxmax()]
-#     print(f"best lag: {best_lag['lag']} days, correlation: {best_lag['correlation']:.4f}")
-#     return list(lags), correlations
+def read_delta_price(data_dir: str) -> pd.Series:
+    """
+    Read the delta price from the data directory
+    """
+    delta_price_dir = os.path.join(data_dir, "dex")
+    if not os.path.exists(delta_price_dir):
+        raise FileNotFoundError(f"Directory not found: {delta_price_dir}")
+
+    delta_price_files = glob.glob(f"{delta_price_dir}/*.csv")
+    if not delta_price_files:
+        raise FileNotFoundError(f"No delta price files found in {delta_price_dir}")
+
+    # Ensure files are processed in timestamp order
+    delta_price_files = sorted(
+        delta_price_files,
+        key=lambda p: int(os.path.basename(p).split('.')[0])
+    )
+
+    values_by_timestamp = {}
+    for file in delta_price_files:
+        timestamp = int(os.path.basename(file).split('.')[0])
+        with open(file, 'r') as f:
+            first_line = f.readline().strip()
+        value = float(first_line)
+        values_by_timestamp[timestamp] = value
+
+    delta_price_series = pd.Series(values_by_timestamp).sort_index()
+    return delta_price_series
+ 
+def compute_delta_delta_price(df: pd.DataFrame, delta_price_series: pd.Series) -> pd.Series:
+    
+    """
+    Compute the delta delta price by aligning timestamps
+    """
+    # Create a series indexed by timestamp from the dataframe (ensure int index)
+    price_by_ts = pd.Series(df['price'].values, index=df['timestamp'].astype(int))
+
+    # Align delta_price_series to the dataframe timestamps using nearest neighbor
+    aligned_delta = delta_price_series.sort_index().reindex(price_by_ts.index, method='nearest')
+
+    # Return values aligned to the dataframe's index to avoid assignment NaNs
+    delta_delta_values = price_by_ts.values - aligned_delta.values
+    return pd.Series(delta_delta_values, index=df.index)
+
+def smooth_delta_delta_price(df: pd.DataFrame, config: dict) -> pd.Series:
+    """
+    Smooth the delta delta price using a rolling window
+    """
+    return df['delta_delta_price'].ewm(alpha=1-config["delta_delta_price_gamma"],adjust=False).mean()
 
 if __name__ == "__main__":
     config = read_fee_config("./configs/fee_config.json")
-    df = read_pool_snapshots(config["pool_address"],config["snapshot_dir"])
-    df['volatility'] = compute_volatility(config["volatility_gamma"], df)
-    df['tvl_filtered'] = tvl_filter(df, config["tvl_window"], config["tvl_sigma"])
-    df['vol_to_tvl_ratio'] = vol_to_tvl_ratio(df)
-    # lags, correlations = check_lag(df)
-
-    # debug print
-    print(df.head())
-    print(config)
-    print(df.columns)
-
-    # plot price, tvl and volume as subplots
-    fig = make_subplots(rows=5, cols=1, subplot_titles=("Price", "TVL", "Volume", "Volatility", "Volume to TVL (Filtered) Ratio"))
-    fig.add_trace(go.Scatter(x=df['timestamp'], y=df['price'], name='Price'), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df['timestamp'], y=df['tvl_usd'], name='TVL'), row=2, col=1)
-    fig.add_trace(go.Scatter(x=df['timestamp'], y=df['volume_24h_usd'], name='Volume'), row=3, col=1)
-    fig.add_trace(go.Scatter(x=df['timestamp'], y=df['volatility'], name='Volatility'), row=4, col=1)
-    fig.add_trace(go.Scatter(x=df['timestamp'], y=df['vol_to_tvl_ratio'], name='Volume to TVL (Filtered) Ratio'), row=5, col=1)
-    fig.add_trace(go.Scatter(x=df['timestamp'], y=df['tvl_filtered'], name='TVL Filtered'), row=2, col=1)
-    fig.show()
-
+    pool_dfs = read_data(config["data_dir"])
+    delta_price_series = read_delta_price(config["data_dir"])
+    for pool_address, df in pool_dfs.items():
+        ts = pd.to_datetime(df['timestamp'], unit='s')
+        df['volatility'] = compute_volatility(config["volatility_gamma"], df)
+        df['tvl_filtered'] = tvl_filter(df, config["tvl_window"], config["tvl_sigma"])
+        df['vol_to_tvl_ratio'] = vol_to_tvl_ratio(df)
+        df['delta_delta_price'] = compute_delta_delta_price(df, delta_price_series)
+        df['delta_delta_price_smooth'] = smooth_delta_delta_price(df, config)
+        fig = make_subplots(rows=4, cols=1, subplot_titles=("Price", "Volatility", "Volume to TVL (Filtered) Ratio", "Delta Delta Price", "Delta Delta Price Smooth"))
+        fig.add_trace(go.Scatter(x=ts, y=df['price'], name='Price'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=ts, y=df['volatility'], name='Volatility'), row=2, col=1)
+        fig.add_trace(go.Scatter(x=ts, y=df['vol_to_tvl_ratio'], name='Volume to TVL (Filtered) Ratio'), row=3, col=1)
+        fig.add_trace(go.Scatter(x=ts, y=df['delta_delta_price'], name='Delta Delta Price'), row=4, col=1)
+        fig.add_trace(go.Scatter(x=ts, y=df['delta_delta_price_smooth'], name='Delta Delta Price Smooth'), row=4, col=1)
+        fig.show()
