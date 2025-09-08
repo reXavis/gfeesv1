@@ -3,5 +3,6 @@
     "volatility_gamma": 0.98,
     "tvl_window": 11,
     "tvl_sigma": 3,
-    "delta_delta_price_gamma": 0.75
-}
+    "delta_delta_price_gamma": 0.75,
+    "volatility_low_clip": 0.01,
+    "volatility_high_clip": 0.99}

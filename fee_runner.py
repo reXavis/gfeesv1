@@ -108,7 +108,7 @@ def tvl_filter(df: pd.DataFrame, tvl_window: int, tvl_sigma: float) -> pd.Series
     filtered[mask_outlier] = rolling_median[mask_outlier]
     return filtered
 
-def compute_volatility(volatility_gamma: float, df: pd.DataFrame) -> pd.Series:
+def compute_volatility(volatility_gamma: float, df: pd.DataFrame, volatility_low_clip: float, volatility_high_clip: float) -> pd.Series:
     """
     Compute EWMA volatility of the price given gamma
     """
@@ -116,9 +116,10 @@ def compute_volatility(volatility_gamma: float, df: pd.DataFrame) -> pd.Series:
 
     # compute the returns
     returns = np.log(price / price.shift(1))
-
+    # low, high = returns.quantile(volatility_low_clip), returns.quantile(volatility_high_clip)
+    # returns = returns.clip(low, high)
     # check docs on complex formula
-    return 100000*np.sqrt(returns.pow(2).ewm(alpha=1-volatility_gamma,adjust=False).mean())
+    return 100000*np.sqrt(abs(returns).pow(1).ewm(alpha=1-volatility_gamma,adjust=False).mean())
     
 def vol_to_tvl_ratio(df: pd.DataFrame) -> pd.Series:
     """
@@ -226,7 +227,7 @@ if __name__ == "__main__":
     delta_price_series = read_delta_price(config["data_dir"])
     for pool_address, df in pool_dfs.items():
         ts = pd.to_datetime(df['timestamp'], unit='s')
-        df['volatility'] = compute_volatility(config["volatility_gamma"], df)
+        df['volatility'] = compute_volatility(config["volatility_gamma"], df, config["volatility_low_clip"], config["volatility_high_clip"])
         df['tvl_filtered'] = tvl_filter(df, config["tvl_window"], config["tvl_sigma"])
         df['vol_to_tvl_ratio'] = vol_to_tvl_ratio(df)
         df['delta_delta_price'] = compute_delta_delta_price(df, delta_price_series)
