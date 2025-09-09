@@ -28,3 +28,7 @@ No
 HXFinance
 https://api.goldsky.com/api/public/project_cmay1j7dh90w601r2hjv26a5b/subgraphs/hx-analytics/v1.3.2/gn
 Broken
+
+Desmos link:
+https://www.desmos.com/calculator/lxuqoagm6u?lang=es
+

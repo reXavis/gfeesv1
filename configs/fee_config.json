@@ -1,8 +1,24 @@
 {
     "data_dir": "./data",
-    "volatility_gamma": 0.98,
+    "first_volatility_gamma": 0.02,
+    "second_volatility_gamma": 0.1,
     "tvl_window": 11,
     "tvl_sigma": 3,
     "delta_delta_price_gamma": 0.75,
-    "volatility_low_clip": 0.01,
-    "volatility_high_clip": 0.99}
+    "fee_parameters": {
+        "volatility_params": {
+            "volatility_a1": 143,
+            "volatility_a2": 370
+        },
+        "vol_tvlf_params": {
+            "vol_tvlf_b1": 3.78,
+            "vol_tvlf_b2": 13
+        },
+        "delta_delta_price_params": {
+            "delta_delta_price_a1": 0.053,
+            "delta_delta_price_a2": 0.406
+            },
+        "min_fee": 0.05,
+        "max_fee": 0.3
+        }
+    }
