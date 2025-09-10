@@ -17,7 +17,6 @@ def calculate_price_from_sqrt_price(sqrt_price_str):
     # Convert to actual price
     price = (sqrt_price / (2**96)) ** 2
     return price
-
  
 def read_fee_config(config_file: str) -> dict:
     # read the config file
@@ -148,11 +147,6 @@ def compute_delta_delta_price(df: pd.DataFrame, delta_price_series: pd.Series) -
     delta_delta_values = price_by_ts.values - aligned_delta.values
     return pd.Series(delta_delta_values, index=df.index)
 
-def smooth_delta_delta_price(df: pd.DataFrame, config: dict) -> pd.Series:
-    """
-    Smooth the delta delta price using a rolling window
-    """
-    return df['delta_delta_price'].ewm(alpha=1-config["delta_delta_price_gamma"],adjust=False).mean()
 
 def read_ramses_calibration(csv_path: str) -> pd.DataFrame:
     """
@@ -219,7 +213,6 @@ def build_price_plots(df: pd.DataFrame, ts: pd.Series) -> None:
     fig.add_trace(go.Scatter(x=ts, y=df['volatility'], name='Volatility'), row=2, col=1)
     fig.add_trace(go.Scatter(x=ts, y=df["vol_to_tvl_ratio"], name='Volume to TVL (Filtered) Ratio'), row=3, col=1)
     fig.add_trace(go.Scatter(x=ts, y=df['delta_delta_price'], name='Delta Delta Price'), row=4, col=1)
-    fig.add_trace(go.Scatter(x=ts, y=df['delta_delta_price_smooth'], name='Delta Delta Price Smooth'), row=4, col=1)
     fig.show()
 
 def build_fee_plots(df: pd.DataFrame, ts: pd.Series) -> None:  
@@ -246,7 +239,6 @@ def build_fee_component_plots(ramses_df: pd.DataFrame, df: pd.DataFrame, ts: pd.
     fig.update_layout(title="Fee Component Breakdown Over Time")
     fig.show()
 
-
 if __name__ == "__main__":
     config = read_fee_config("./configs/fee_config.json")
     ramses_df = read_ramses_calibration(os.path.join(config["data_dir"], "calibration", "ramses.csv"))
@@ -258,10 +250,8 @@ if __name__ == "__main__":
         df['tvl_filtered'] = tvl_filter(df, config["tvl_window"], config["tvl_sigma"])
         df['vol_to_tvl_ratio'] = vol_to_tvl_ratio(df)
         df['delta_delta_price'] = compute_delta_delta_price(df, delta_price_series)
-        df['delta_delta_price_smooth'] = smooth_delta_delta_price(df, config)
         build_distribution_plots(df)
         build_price_plots(df, ts)
         fee_df = compute_fee(df, config)
-        print(fee_df.tail())
         build_fee_plots(fee_df, ts)
         build_fee_component_plots(ramses_df, fee_df, ts)
