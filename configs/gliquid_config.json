@@ -1,6 +1,0 @@
-{
-    "token0": "0x5555555555555555555555555555555555555555",
-    "token1": "0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb",
-    "pull_interval": 60,
-    "subgraph_url": "https://api.goldsky.com/api/public/project_cmb20ryy424yb01wy7zwd7xd1/subgraphs/analytics/1.2.3/gn"
-}

@@ -1,9 +1,0 @@
-{
-    "token0": "0x5555555555555555555555555555555555555555",
-    "token1": "0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb",
-    "pull_interval": 60,
-    "graph_url_list": {
-        "HyperSwapV3": "https://api.goldsky.com/api/public/project_cm97l77ib0cz601wlgi9wb0ec/subgraphs/v3-subgraph/6.0.0/gn",
-        "ProjectX": "https://api.goldsky.com/api/public/project_cmbbm2iwckb1b01t39xed236t/subgraphs/uniswap-v3-hyperevm-position/prod/gn"
-    }
-}
