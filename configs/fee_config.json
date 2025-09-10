@@ -7,12 +7,15 @@
     "delta_delta_price_gamma": 0.75,
     "fee_parameters": {
         "volatility_params": {
-            "volatility_a1": 143,
-            "volatility_a2": 370
+            "volatility_b1": 0.04,
+            "volatility_b2": 0.038,
+            "volatility_b3": 48.4,
+            "volatility_b4": -8.6,
+            "volatility_b5": 0.00058
         },
         "vol_tvlf_params": {
-            "vol_tvlf_b1": 0.77,
-            "vol_tvlf_b2": 4.15
+            "vol_tvlf_b1": 0.54,
+            "vol_tvlf_b2": 3.45
         },
         "delta_delta_price_params": {
             "delta_delta_price_a1": 0.053,

@@ -174,9 +174,13 @@ def compute_fee(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     Compute the fee based on the volatility, volume to tvl ratio, and delta delta price
     """
     # Compute sigmoid terms for each component
-    y1 = np.log(1 + np.exp((df['volatility'] - config['fee_parameters']['volatility_params']['volatility_a2']) /
-                        config['fee_parameters']['volatility_params']['volatility_a1']))
+    # y1 = np.log(1 + np.exp((df['volatility'] - config['fee_parameters']['volatility_params']['volatility_a2']) /
+    #                    config['fee_parameters']['volatility_params']['volatility_a1']))
     
+    y1 = (config["fee_parameters"]["volatility_params"]["volatility_b1"] 
+    + config["fee_parameters"]["volatility_params"]["volatility_b5"]*df['volatility'] 
+    + config["fee_parameters"]["volatility_params"]["volatility_b2"]/(1 + np.exp((df['volatility'] - config["fee_parameters"]["volatility_params"]["volatility_b3"])/config["fee_parameters"]["volatility_params"]["volatility_b4"])))
+
     y2 = np.log(1 + np.exp((df['vol_to_tvl_ratio'] - config['fee_parameters']['vol_tvlf_params']['vol_tvlf_b2']) /
                           config['fee_parameters']['vol_tvlf_params']['vol_tvlf_b1']))
     
