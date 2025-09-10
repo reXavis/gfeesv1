@@ -11,8 +11,8 @@
             "volatility_a2": 370
         },
         "vol_tvlf_params": {
-            "vol_tvlf_b1": 3.78,
-            "vol_tvlf_b2": 13
+            "vol_tvlf_b1": 0.77,
+            "vol_tvlf_b2": 4.15
         },
         "delta_delta_price_params": {
             "delta_delta_price_a1": 0.053,

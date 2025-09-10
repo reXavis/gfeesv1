@@ -248,8 +248,8 @@ def compute_fee(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     Compute the fee based on the volatility, volume to tvl ratio, and delta delta price
     """
     # Compute sigmoid terms for each component
-    y1 = np.log(1 + np.exp((df['volatility'] - config['fee_parameters']['volatility_params']['volatility_a2']) / 
-                          config['fee_parameters']['volatility_params']['volatility_a1']))
+    y1 = np.log(1 + np.exp((df['volatility'] - config['fee_parameters']['volatility_params']['volatility_a2']) /
+                        config['fee_parameters']['volatility_params']['volatility_a1']))
     
     y2 = np.log(1 + np.exp((df['vol_to_tvl_ratio'] - config['fee_parameters']['vol_tvlf_params']['vol_tvlf_b2']) /
                           config['fee_parameters']['vol_tvlf_params']['vol_tvlf_b1']))
@@ -267,6 +267,53 @@ def compute_fee(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     # Return as pandas Series to maintain index alignment
     return pd.DataFrame({'fee': fee, 'fee_volatility': y1, 'fee_vol_to_tvl_ratio': y2, 'fee_delta_delta_price': y3}, index=df.index)
 
+def build_distribution_plots(df: pd.DataFrame) -> None:
+    """
+    Build the kernel density distribution plots for the metrics
+    """
+    fig = make_subplots(rows=3, cols=1, subplot_titles=("Volatility", "Volume to TVL (Filtered) Ratio", "Delta Delta Price"))
+    fig.add_trace(go.Histogram(x=df['volatility'], name='Volatility', xbins=dict(size=1.25)), row=1, col=1)
+    fig.add_trace(go.Histogram(x=df['vol_to_tvl_ratio'], name='Volume to TVL (Filtered) Ratio', xbins=dict(size=0.005)), row=2, col=1)
+    fig.add_trace(go.Histogram(x=df['delta_delta_price'], name='Delta Delta Price', xbins=dict(size=0.005)), row=3, col=1)
+
+    fig.show()
+
+def build_price_plots(df: pd.DataFrame, ts: pd.Series) -> None:
+    """
+    Build the price plots for the metrics across time
+    """
+    fig = make_subplots(rows=4, cols=1, subplot_titles=("Price", "Volatility", "Volume to TVL (Filtered) Ratio", "Delta Delta Price", "Delta Delta Price Smooth"))
+    fig.add_trace(go.Scatter(x=ts, y=df['price'], name='Price'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=ts, y=df['volatility'], name='Volatility'), row=2, col=1)
+    fig.add_trace(go.Scatter(x=ts, y=df["vol_to_tvl_ratio"], name='Volume to TVL (Filtered) Ratio'), row=3, col=1)
+    fig.add_trace(go.Scatter(x=ts, y=df['delta_delta_price'], name='Delta Delta Price'), row=4, col=1)
+    fig.add_trace(go.Scatter(x=ts, y=df['delta_delta_price_smooth'], name='Delta Delta Price Smooth'), row=4, col=1)
+    fig.show()
+
+def build_fee_plots(df: pd.DataFrame, ts: pd.Series) -> None:  
+    """
+    Build the fee plots for the metrics
+    """
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=ts, y=df['fee'], name='Fee'))
+    fig.add_trace(go.Scatter(x=ts, y=df['fee_volatility'], name='Volatility Fee'))
+    fig.add_trace(go.Scatter(x=ts, y=df['fee_vol_to_tvl_ratio'], name='Volume to TVL (Filtered) Ratio Fee'))
+    fig.add_trace(go.Scatter(x=ts, y=df['fee_delta_delta_price'], name='Delta Delta Price Fee'))
+    fig.show()
+
+def build_fee_component_plots(ramses_df: pd.DataFrame, df: pd.DataFrame, ts: pd.Series) -> None:
+    """
+    Build the fee component plots as stacked area plots
+    """
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=ts, y=df['fee_volatility'], name='Volatility Fee', mode='none', stackgroup='one', fillcolor='rgba(99,110,250,0.5)'))
+    fig.add_trace(go.Scatter(x=ts, y=df['fee_vol_to_tvl_ratio'], name='Volume to TVL (Filtered) Ratio Fee', mode='none', stackgroup='one', fillcolor='rgba(239,85,59,0.5)'))
+    fig.add_trace(go.Scatter(x=ts, y=df['fee_delta_delta_price'], name='Delta Delta Price Fee', mode='none', stackgroup='one', fillcolor='rgba(0,204,150,0.5)'))
+    fig.add_trace(go.Scatter(x=ts, y=df['fee'], name='Total Fee', mode='lines', line=dict(width=2)))
+    fig.add_trace(go.Scatter(x=ts, y=ramses_df['fees_24h'], name='Ramses Fees', mode='lines', line=dict(width=2, color='black')))
+    fig.update_layout(title="Fee Component Breakdown Over Time")
+    fig.show()
+
 
 if __name__ == "__main__":
     config = read_fee_config("./configs/fee_config.json")
@@ -280,72 +327,9 @@ if __name__ == "__main__":
         df['vol_to_tvl_ratio'] = vol_to_tvl_ratio(df)
         df['delta_delta_price'] = compute_delta_delta_price(df, delta_price_series)
         df['delta_delta_price_smooth'] = smooth_delta_delta_price(df, config)
-        fig = make_subplots(rows=4, cols=1, subplot_titles=("Price", "Volatility", "Volume to TVL (Filtered) Ratio", "Delta Delta Price", "Delta Delta Price Smooth"))
-        fig.add_trace(go.Scatter(x=ts, y=df['price'], name='Price'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=ts, y=df['volatility'], name='Volatility'), row=2, col=1)
-        fig.add_trace(go.Scatter(x=ts, y=df['vol_to_tvl_ratio'], name='Volume to TVL (Filtered) Ratio'), row=3, col=1)
-        fig.add_trace(go.Scatter(x=ts, y=df['delta_delta_price'], name='Delta Delta Price'), row=4, col=1)
-        fig.add_trace(go.Scatter(x=ts, y=df['delta_delta_price_smooth'], name='Delta Delta Price Smooth'), row=4, col=1)
-        fig.show()
-    # fig = make_subplots(
-    #     rows=2,
-    #     cols=1,
-    #     shared_xaxes=True,
-    #     subplot_titles=("Ramses Volume 24h (USD)", "Ramses Fees 24h (%)")
-    # )
-    # fig.add_trace(go.Scatter(x=ramses_df['timestamp'], y=ramses_df['volume_24h'], name='Volume 24h (USD)'), row=1, col=1)
-    # fig.add_trace(go.Scatter(x=ramses_df['timestamp'], y=ramses_df['fees_24h'], name='Fees 24h (%)'), row=2, col=1)
-    # fig.show()
-    # print(f"Correlation between Ramses volume and fees: {test_ramses_correlation(ramses_df)}")
-    # fig = make_subplots(rows=1, cols=1, subplot_titles=("Scatter plot of Ramses volume and fees"))
-    # fig.add_trace(go.Scatter(x=ramses_df['volume_24h'], y=ramses_df['fees_24h'], mode='markers', name='Volume 24h (USD) vs Fees 24h (%)'), row=1, col=1)
-    # fig.show()
-
-    fee_df = compute_fee(df, config)
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=ts,
-        y=fee_df['fee_volatility'],
-        name='Volatility Fee',
-        mode='none',
-        stackgroup='one',
-        fillcolor='rgba(99,110,250,0.5)'
-    ))
-    fig.add_trace(go.Scatter(
-        x=ts,
-        y=fee_df['fee_vol_to_tvl_ratio'], 
-        name='Volume/TVL Fee',
-        mode='none',
-        stackgroup='one',
-        fillcolor='rgba(239,85,59,0.5)'
-    ))
-    fig.add_trace(go.Scatter(
-        x=ts,
-        y=fee_df['fee_delta_delta_price'],
-        name='Price Impact Fee',
-        mode='none',
-        stackgroup='one',
-        fillcolor='rgba(0,204,150,0.5)'
-    ))
-    fig.add_trace(go.Scatter(
-        x=ts,
-        y=fee_df['fee'],
-        name='Total Fee',
-        mode='lines',
-        line=dict(width=2)
-        ))
-    fig.add_trace(go.Scatter(
-        x=ramses_df['timestamp'],
-        y=ramses_df['fees_24h'],
-        name='Ramses Fees 24h (%)',
-        mode='lines',
-        line=dict(width=2, color='black')
-    ))
-    fig.update_layout(
-        title='Fee Component Breakdown Over Time',
-        xaxis_title='Time',
-        yaxis_title='Fee Components',
-        showlegend=True
-    )
-
-    fig.show()
+        build_distribution_plots(df)
+        build_price_plots(df, ts)
+        fee_df = compute_fee(df, config)
+        print(fee_df.tail())
+        build_fee_plots(fee_df, ts)
+        build_fee_component_plots(ramses_df, fee_df, ts)
