@@ -1,6 +1,3 @@
 pandas
 numpy
-plotly
-plotly-express
-numpy
 requests
