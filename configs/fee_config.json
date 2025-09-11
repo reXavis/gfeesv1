@@ -1,6 +1,7 @@
 {
     "data_dir": "./data",
     "first_volatility_gamma": 0.02,
+    "proposal_interval": 15,
     "second_volatility_gamma": 0.1,
     "tvl_window": 11,
     "tvl_sigma": 3,

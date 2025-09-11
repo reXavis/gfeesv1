@@ -163,39 +163,50 @@ def read_ramses_calibration(csv_path: str) -> pd.DataFrame:
     df['timestamp'] = pd.to_datetime(df['timestamp'].astype(int), unit='s')
     return df
 
-def test_ramses_correlation(ramses_df: pd.DataFrame) -> None:
-    """
-    Test the correlation between Ramses volume and fees
-    """
-    return np.corrcoef(ramses_df['volume_24h'], ramses_df['fees_24h'])[0, 1]
-
 def compute_fee(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """
-    Compute the fee based on the volatility, volume to tvl ratio, and delta delta price
+    Compute the fee based on the volatility, volume to tvl ratio, and delta delta price.
+    Only updates fee every proposal interval.
     """
-    # Compute sigmoid terms for each component
-    # y1 = np.log(1 + np.exp((df['volatility'] - config['fee_parameters']['volatility_params']['volatility_a2']) /
-    #                    config['fee_parameters']['volatility_params']['volatility_a1']))
+    # Create empty DataFrames for storing fee components
+    fee_df = pd.DataFrame(index=df.index)
     
-    y1 = (config["fee_parameters"]["volatility_params"]["volatility_b1"] 
-    + config["fee_parameters"]["volatility_params"]["volatility_b5"]*df['volatility'] 
-    + config["fee_parameters"]["volatility_params"]["volatility_b2"]/(1 + np.exp((df['volatility'] - config["fee_parameters"]["volatility_params"]["volatility_b3"])/config["fee_parameters"]["volatility_params"]["volatility_b4"])))
+    # Get proposal interval from config
+    proposal_interval = config["proposal_interval"]
+    
+    # Get first timestamp
+    start_ts = df.iloc[0]['timestamp']
+    
+    # Calculate fee components only at proposal intervals
+    for i in range(0, len(df), proposal_interval):
+        # Get data for this interval
+        interval_df = df.iloc[i:i+proposal_interval]
+        
+        # Calculate components for this interval
+        y1 = (config["fee_parameters"]["volatility_params"]["volatility_b1"] 
+        + config["fee_parameters"]["volatility_params"]["volatility_b5"]*interval_df['volatility'].iloc[-1]
+        + config["fee_parameters"]["volatility_params"]["volatility_b2"]/(1 + np.exp((interval_df['volatility'].iloc[-1] - config["fee_parameters"]["volatility_params"]["volatility_b3"])/config["fee_parameters"]["volatility_params"]["volatility_b4"])))
 
-    y2 = np.log(1 + np.exp((df['vol_to_tvl_ratio'] - config['fee_parameters']['vol_tvlf_params']['vol_tvlf_b2']) /
-                          config['fee_parameters']['vol_tvlf_params']['vol_tvlf_b1']))
-    
-    y3 = np.log(1 + np.exp((np.abs(df['delta_delta_price']) - config['fee_parameters']['delta_delta_price_params']['delta_delta_price_a2']) /
-                          config['fee_parameters']['delta_delta_price_params']['delta_delta_price_a1']))
+        y2 = np.log(1 + np.exp((interval_df['vol_to_tvl_ratio'].iloc[-1] - config['fee_parameters']['vol_tvlf_params']['vol_tvlf_b2']) /
+                              config['fee_parameters']['vol_tvlf_params']['vol_tvlf_b1']))
+        
+        y3 = np.log(1 + np.exp((np.abs(interval_df['delta_delta_price'].iloc[-1]) - config['fee_parameters']['delta_delta_price_params']['delta_delta_price_a2']) /
+                              config['fee_parameters']['delta_delta_price_params']['delta_delta_price_a1']))
 
-    # Get fee bounds
-    min_fee = config['fee_parameters']['min_fee']
-    max_fee = config['fee_parameters']['max_fee']
-    
-    # Compute total fee and clip to bounds
-    fee = np.clip(y1 + y2 + y3, min_fee, max_fee)
-    
-    # Return as pandas Series to maintain index alignment
-    return pd.DataFrame({'fee': fee, 'fee_volatility': y1, 'fee_vol_to_tvl_ratio': y2, 'fee_delta_delta_price': y3}, index=df.index)
+        # Get fee bounds
+        min_fee = config['fee_parameters']['min_fee']
+        max_fee = config['fee_parameters']['max_fee']
+        
+        # Compute total fee and clip to bounds
+        fee = np.clip(y1 + y2 + y3, min_fee, max_fee)
+        
+        # Assign fee components to all rows in this interval
+        fee_df.loc[interval_df.index, 'fee'] = fee
+        fee_df.loc[interval_df.index, 'fee_volatility'] = y1
+        fee_df.loc[interval_df.index, 'fee_vol_to_tvl_ratio'] = y2  
+        fee_df.loc[interval_df.index, 'fee_delta_delta_price'] = y3
+
+    return fee_df
 
 def build_distribution_plots(df: pd.DataFrame) -> None:
     """
@@ -230,16 +241,17 @@ def build_fee_plots(df: pd.DataFrame, ts: pd.Series) -> None:
     fig.add_trace(go.Scatter(x=ts, y=df['fee_delta_delta_price'], name='Delta Delta Price Fee'))
     fig.show()
 
-def build_fee_component_plots(ramses_df: pd.DataFrame, df: pd.DataFrame, ts: pd.Series) -> None:
+def build_fee_component_plots(ramses_df: pd.DataFrame, df: pd.DataFrame) -> None:
     """
     Build the fee component plots as stacked area plots
     """
+    # Convert timestamps to datetime for alignment
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=ts, y=df['fee_volatility'], name='Volatility Fee', mode='none', stackgroup='one', fillcolor='rgba(99,110,250,0.5)'))
-    fig.add_trace(go.Scatter(x=ts, y=df['fee_vol_to_tvl_ratio'], name='Volume to TVL (Filtered) Ratio Fee', mode='none', stackgroup='one', fillcolor='rgba(239,85,59,0.5)'))
-    fig.add_trace(go.Scatter(x=ts, y=df['fee_delta_delta_price'], name='Delta Delta Price Fee', mode='none', stackgroup='one', fillcolor='rgba(0,204,150,0.5)'))
-    fig.add_trace(go.Scatter(x=ts, y=df['fee'], name='Total Fee', mode='lines', line=dict(width=2)))
-    fig.add_trace(go.Scatter(x=ts, y=ramses_df['fees_24h'], name='Ramses Fees', mode='lines', line=dict(width=2, color='black')))
+    fig.add_trace(go.Scatter(x=df['timestamp'], y=df['fee_volatility'], name='Volatility Fee', mode='none', stackgroup='one', fillcolor='rgba(99,110,250,0.5)'))
+    fig.add_trace(go.Scatter(x=df['timestamp'], y=df['fee_vol_to_tvl_ratio'], name='Volume to TVL (Filtered) Ratio Fee', mode='none', stackgroup='one', fillcolor='rgba(239,85,59,0.5)'))
+    fig.add_trace(go.Scatter(x=df['timestamp'], y=df['fee_delta_delta_price'], name='Delta Delta Price Fee', mode='none', stackgroup='one', fillcolor='rgba(0,204,150,0.5)'))
+    fig.add_trace(go.Scatter(x=df['timestamp'], y=df['fee'], name='Total Fee', mode='lines', line=dict(width=2)))
+    fig.add_trace(go.Scatter(x=ramses_df['timestamp'], y=ramses_df['fees_24h'], name='Ramses Fees', mode='lines', line=dict(width=2, color='black')))
     fig.update_layout(title="Fee Component Breakdown Over Time")
     fig.show()
 
@@ -257,5 +269,6 @@ if __name__ == "__main__":
         build_distribution_plots(df)
         build_price_plots(df, ts)
         fee_df = compute_fee(df, config)
+        fee_df['timestamp'] = ts
         build_fee_plots(fee_df, ts)
-        build_fee_component_plots(ramses_df, fee_df, ts)
+        build_fee_component_plots(ramses_df, fee_df)
