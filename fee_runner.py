@@ -156,7 +156,8 @@ if __name__ == "__main__":
                 pool_metric["filtered_tvl"] = tvl_filter(tvls, config["tvl_window"], config["tvl_sigma"])
                 pool_metric['vol_to_tvl_ratio'] = vol_to_tvl_ratio(pool_metric['volume24h'], pool_metric['filtered_tvl'])
                 pool_metric["volatility"] = compute_volatility(config["first_volatility_gamma"], config["second_volatility_gamma"], prices)
-                pool_metric["fee"] = compute_fee(pool_metric["volatility"], pool_metric['vol_to_tvl_ratio'], pool_metric['delta_delta_price'], config)
+                if len(tvls) % config["proposal_interval"] == 0:
+                    pool_metric["fee"] = compute_fee(pool_metric["volatility"], pool_metric['vol_to_tvl_ratio'], pool_metric['delta_delta_price'], config)
         print(gliquid_pool_metrics)
         time.sleep(config["pull_interval"])
  
