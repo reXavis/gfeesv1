@@ -246,18 +246,25 @@ def build_fee_component_plots(ramses_df: pd.DataFrame, df: pd.DataFrame) -> None
 # Main function
 
 if __name__ == "__main__":
+    # Load config
     config = read_fee_config("./configs/fee_config.json")
+    # Read Ramses, Gliquid and Dex Data
     ramses_df = read_ramses_calibration(os.path.join(config["data_dir"], "calibration", "ramses.csv"))
     pool_dfs = read_data(config["data_dir"])
     delta_price_series = read_delta_price(config["data_dir"])
+    # For each pool we:
     for pool_address, df in pool_dfs.items():
+        # Compute metrics
         df['volatility'] = compute_volatility(config["volatility_parameters"]["first_volatility_gamma"], config["volatility_parameters"]["second_volatility_gamma"], df['price'])
         df['tvl_filtered'] = metric_filter(df['tvl_usd'], config["tvl_filter_parameters"]["tvl_window"], config["tvl_filter_parameters"]["tvl_sigma"])
         df['price_filtered'] = metric_filter(df['price'], config["price_filter_parameters"]["price_window"], config["price_filter_parameters"]["price_sigma"])
         df['vol_to_tvl_ratio'] = vol_to_tvl_ratio(df['volume_24h_usd'], df['tvl_filtered'])
         df['delta_delta_price'] = compute_delta_delta_price(df, delta_price_series)
+        # Build plots
         build_distribution_plots(df['volatility'], df['vol_to_tvl_ratio'], df['delta_delta_price'])
         build_price_plots(df['price_filtered'], df['volatility'], df['vol_to_tvl_ratio'], df['delta_delta_price'], df['timestamp'])
+        # Compute fee
         fee_df = compute_fee(df['volatility'], df['vol_to_tvl_ratio'], df['delta_delta_price'], df['timestamp'], config)
+        # Build fee plots
         build_fee_plots(fee_df, fee_df['timestamp'])
         build_fee_component_plots(ramses_df, fee_df)
