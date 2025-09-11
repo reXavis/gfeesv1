@@ -74,6 +74,10 @@ run_script() {
 # Start both ingestor scripts
 run_script "dex_ingestor.py" "configs/ingestor_config.json"
 run_script "gliquid_ingestor.py" "configs/gliquid_config.json"
+# Wait for 1 minute to allow ingestors to start collecting data
+echo "⏳ Waiting 60 seconds before starting fee runner..."
+sleep 60
+
 run_script "fee_runner.py" "configs/fee_config.json"
 
 echo ""
