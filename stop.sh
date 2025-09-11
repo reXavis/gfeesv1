@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🛑 Stopping GFees Data Ingestion Scripts..."
+echo "🛑 Stopping GFeesV1 scripts..."
 
 # Function to stop script by PID file
 stop_script() {
@@ -33,10 +33,11 @@ stop_script() {
 # Stop both ingestor scripts
 stop_script "dex_ingestor.py"
 stop_script "gliquid_ingestor.py"
+stop_script "fee_runner.py"
 
 # Also kill any remaining processes by name (fallback)
 echo "🧹 Cleaning up any remaining processes..."
 pkill -f "dex_ingestor.py" 2>/dev/null || true
 pkill -f "gliquid_ingestor.py" 2>/dev/null || true
-
+pkill -f "fee_runner.py" 2>/dev/null || true
 echo "✅ All scripts stopped successfully!"

@@ -94,11 +94,11 @@ def read_delta_price(data_dir: str) -> float:
 
     return value
 
-def tvl_filter(tvl: float, tvls: list, tvl_window: int, tvl_sigma: float) -> float:
+def tvl_filter(tvls: list, tvl_window: int, tvl_sigma: float) -> float:
     """
     Apply Hampel filter to detect and correct outliers in the tvl
     """
-    values = np.array(tvls[-tvl_window:] + [tvl])
+    values = np.array(tvls[-tvl_window:])
     median = np.median(values)
     mad = np.median(np.abs(values - median))
     if mad == 0:
@@ -107,10 +107,10 @@ def tvl_filter(tvl: float, tvls: list, tvl_window: int, tvl_sigma: float) -> flo
         scale = 1.4826 * mad
     threshold = tvl_sigma * scale
     # If the current value deviates too much, replace it with the median of the window
-    if abs(tvl - median) > threshold:
+    if abs(tvls[-1] - median) > threshold:
         return median
     else:
-        return tvl
+        return tvls[-1]
 
 def compute_fee(volatility: float, vol_to_tvl_ratio: float, delta_delta_price: float, config: dict) -> float:
     """
@@ -151,12 +151,12 @@ if __name__ == "__main__":
             pool_metric['vol_to_tvl_ratio'] = vol_to_tvl_ratio(pool_metric['volume24h'], pool_metric['tvl'])
             pool_metric['delta_delta_price'] = pool_metric['price'] - delta_price
             prices.append(pool_metric['price'])
+            tvls.append(pool_metric['tvl'])
             if len(tvls) >= config["start_threshold"]*config["pull_interval"] and len(prices) >= config["start_threshold"]*config["pull_interval"]:
-                pool_metric["filtered_tvl"] = tvl_filter(pool_metric['tvl'], tvls, config["tvl_window"], config["tvl_sigma"])
+                pool_metric["filtered_tvl"] = tvl_filter(tvls, config["tvl_window"], config["tvl_sigma"])
                 pool_metric['vol_to_tvl_ratio'] = vol_to_tvl_ratio(pool_metric['volume24h'], pool_metric['filtered_tvl'])
                 pool_metric["volatility"] = compute_volatility(config["first_volatility_gamma"], config["second_volatility_gamma"], prices)
                 pool_metric["fee"] = compute_fee(pool_metric["volatility"], pool_metric['vol_to_tvl_ratio'], pool_metric['delta_delta_price'], config)
-        tvls.append(pool_metric['tvl'])
         print(gliquid_pool_metrics)
         time.sleep(config["pull_interval"])
  

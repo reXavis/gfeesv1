@@ -40,15 +40,20 @@ mkdir -p configs
 # Check if config files exist
 if [ ! -f "configs/ingestor_config.json" ]; then
     echo "⚠️  Warning: configs/ingestor_config.json not found"
-    echo "   Please create this file with your DEX configuration"
+    echo "   Please create this file with your DEX ingestor configuration"
 fi
 
 if [ ! -f "configs/gliquid_config.json" ]; then
     echo "⚠️  Warning: configs/gliquid_config.json not found"
-    echo "   Please create this file with your GLiquid configuration"
+    echo "   Please create this file with your GLiquid ingestor configuration"
 fi
 
-echo "🎯 Starting data ingestion scripts..."
+if [ ! -f "configs/fee_runner_config.json" ]; then
+    echo "⚠️  Warning: configs/fee_runner_config.json not found"
+    echo "   Please create this file with your fee runner configuration"
+fi
+
+echo "🎯 Starting GFeesV1 scripts..."
 
 # Function to run script in background and capture PID
 run_script() {
@@ -69,9 +74,10 @@ run_script() {
 # Start both ingestor scripts
 run_script "dex_ingestor.py" "configs/ingestor_config.json"
 run_script "gliquid_ingestor.py" "configs/gliquid_config.json"
+run_script "fee_runner.py" "configs/fee_runner_config.json"
 
 echo ""
-echo "✅ Setup complete! Both ingestor scripts are running in the background."
+echo "✅ Setup complete! All scripts are running in the background."
 echo ""
 echo "📊 Data will be saved to:"
 echo "   - DEX data: data/dex/"
@@ -81,8 +87,9 @@ echo "🛑 To stop the scripts, run:"
 echo "   ./stop.sh"
 echo ""
 echo "📋 To check running processes:"
-echo "   ps aux | grep -E '(dex_ingestor|gliquid_ingestor)'"
+echo "   ps aux | grep -E '(dex_ingestor|gliquid_ingestor|fee_runner)'"
 echo ""
 echo "📝 To view logs, check the terminal output or redirect to files:"
 echo "   python3 dex_ingestor.py > logs/dex.log 2>&1 &"
 echo "   python3 gliquid_ingestor.py > logs/gliquid.log 2>&1 &"
+echo "   python3 fee_runner.py > logs/fee_runner.log 2>&1 &"
