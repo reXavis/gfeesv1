@@ -23,18 +23,6 @@ def read_fee_config(config_file: str) -> dict:
     with open(config_file, 'r') as f:
         return json.load(f)
 
-    """
-    Filter the df based on the tvl with a hampel filter
-    """
-    tvl = df['tvl_usd']
-    rolling_median = tvl.rolling(window=tvl_window, center=True, min_periods=1).median()
-    diff = (tvl - rolling_median).abs()
-    mad = diff.rolling(window=tvl_window, center=True, min_periods=1).median()
-    threshold = tvl_sigma * 1.4826 * mad
-    mask_outlier = diff > threshold
-    filtered = tvl.copy()
-    filtered[mask_outlier] = rolling_median[mask_outlier]
-    return filtered
 
 def compute_volatility(volatility_gamma: float, second_volatility_gamma: float, prices: list) -> float:
     """
@@ -116,9 +104,6 @@ def compute_fee(volatility: float, vol_to_tvl_ratio: float, delta_delta_price: f
     """
     Compute the fee based on the volatility, volume to tvl ratio, and delta delta price
     """
-    # Compute sigmoid terms for each component
-    # y1 = np.log(1 + np.exp((df['volatility'] - config['fee_parameters']['volatility_params']['volatility_a2']) /
-    #                    config['fee_parameters']['volatility_params']['volatility_a1']))
     
     y1 = (config["fee_parameters"]["volatility_params"]["volatility_b1"] 
     + config["fee_parameters"]["volatility_params"]["volatility_b5"]*volatility 
