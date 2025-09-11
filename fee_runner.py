@@ -7,17 +7,6 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
 
-def calculate_price_from_sqrt_price(sqrt_price_str):
-    """
-    Calculate price from sqrt_price (stored as string).
-    Price = (sqrt_price / 2^96)^2
-    """
-    sqrt_price = int(sqrt_price_str)
-    # sqrt_price is stored as Q64.96 fixed point
-    # Convert to actual price
-    price = (sqrt_price / (2**96)) ** 2
-    return price
- 
 def read_fee_config(config_file: str) -> dict:
     # read the config file
     if not os.path.exists(config_file):
@@ -25,26 +14,23 @@ def read_fee_config(config_file: str) -> dict:
     with open(config_file, 'r') as f:
         return json.load(f)
 
-def tvl_filter(df: pd.DataFrame, tvl_window: int, tvl_sigma: float) -> pd.Series:
+def metric_filter(metric: pd.Series, metric_window: int, metric_sigma: float) -> pd.Series:
     """
-    Filter the df based on the tvl with a hampel filter
+    Filter a metric with a hampel filter
     """
-    tvl = df['tvl_usd']
-    rolling_median = tvl.rolling(window=tvl_window, center=True, min_periods=1).median()
-    diff = (tvl - rolling_median).abs()
-    mad = diff.rolling(window=tvl_window, center=True, min_periods=1).median()
-    threshold = tvl_sigma * 1.4826 * mad
+    rolling_median = metric.rolling(window=metric_window, center=True, min_periods=1).median()
+    diff = (metric - rolling_median).abs()
+    mad = diff.rolling(window=metric_window, center=True, min_periods=1).median()
+    threshold = metric_sigma * 1.4826 * mad
     mask_outlier = diff > threshold
-    filtered = tvl.copy()
+    filtered = metric.copy()
     filtered[mask_outlier] = rolling_median[mask_outlier]
     return filtered
 
-def compute_volatility(volatility_gamma: float, second_volatility_gamma: float, df: pd.DataFrame) -> pd.Series:
+def compute_volatility(volatility_gamma: float, second_volatility_gamma: float, price: pd.Series) -> pd.Series:
     """
     Compute EWMA volatility of the price given gamma
     """
-    price = df['price']
-
     # compute the returns
     returns = np.log(price / price.shift(1))
 
@@ -53,11 +39,11 @@ def compute_volatility(volatility_gamma: float, second_volatility_gamma: float, 
     volatility2 = np.sqrt(volatility.pow(2).ewm(alpha=second_volatility_gamma,adjust=False).mean())
     return volatility2
 
-def vol_to_tvl_ratio(df: pd.DataFrame) -> pd.Series:
+def vol_to_tvl_ratio(volume: pd.Series, tvl: pd.Series) -> pd.Series:
     """
     Compute the ratio of volume to tvl
     """
-    return df['volume_24h_usd'] / df['tvl_filtered']
+    return volume / tvl
 
 def read_data(data_dir: str) -> pd.DataFrame:
     """
@@ -138,7 +124,7 @@ def compute_delta_delta_price(df: pd.DataFrame, delta_price_series: pd.Series) -
     Compute the delta delta price by aligning timestamps
     """
     # Create a series indexed by timestamp from the dataframe (ensure int index)
-    price_by_ts = pd.Series(df['price'].values, index=df['timestamp'].astype(int))
+    price_by_ts = pd.Series(df['price_filtered'].values, index=df['timestamp'].astype(int))
 
     # Align delta_price_series to the dataframe timestamps using nearest neighbor
     aligned_delta = delta_price_series.sort_index().reindex(price_by_ts.index, method='nearest')
@@ -146,7 +132,6 @@ def compute_delta_delta_price(df: pd.DataFrame, delta_price_series: pd.Series) -
     # Return values aligned to the dataframe's index to avoid assignment NaNs
     delta_delta_values = price_by_ts.values - aligned_delta.values
     return pd.Series(delta_delta_values, index=df.index)
-
 
 def read_ramses_calibration(csv_path: str) -> pd.DataFrame:
     """
@@ -160,37 +145,36 @@ def read_ramses_calibration(csv_path: str) -> pd.DataFrame:
     df['volume_24h'] = pd.to_numeric(df['volume_24h'], errors='coerce')
     df['fees_24h'] = pd.to_numeric(df['fees_24h'], errors='coerce')
     df = df.dropna(subset=['timestamp', 'volume_24h', 'fees_24h']).copy()
-    df['timestamp'] = pd.to_datetime(df['timestamp'].astype(int), unit='s')
     return df
 
-def compute_fee(df: pd.DataFrame, config: dict) -> pd.DataFrame:
+def compute_fee(volatility: pd.Series, vol_to_tvl_ratio: pd.Series, delta_delta_price: pd.Series, ts: pd.Series, config: dict) -> pd.DataFrame:
     """
     Compute the fee based on the volatility, volume to tvl ratio, and delta delta price.
     Only updates fee every proposal interval.
     """
     # Create empty DataFrames for storing fee components
-    fee_df = pd.DataFrame(index=df.index)
+    fee_df = pd.DataFrame(index=ts.index)
     
     # Get proposal interval from config
     proposal_interval = config["proposal_interval"]
     
     # Get first timestamp
-    start_ts = df.iloc[0]['timestamp']
+    start_ts = ts.iloc[0]
     
     # Calculate fee components only at proposal intervals
-    for i in range(0, len(df), proposal_interval):
+    for i in range(0, len(ts), proposal_interval):
         # Get data for this interval
-        interval_df = df.iloc[i:i+proposal_interval]
+        interval_ts = ts.iloc[i:i+proposal_interval]
         
         # Calculate components for this interval
         y1 = (config["fee_parameters"]["volatility_params"]["volatility_b1"] 
-        + config["fee_parameters"]["volatility_params"]["volatility_b5"]*interval_df['volatility'].iloc[-1]
-        + config["fee_parameters"]["volatility_params"]["volatility_b2"]/(1 + np.exp((interval_df['volatility'].iloc[-1] - config["fee_parameters"]["volatility_params"]["volatility_b3"])/config["fee_parameters"]["volatility_params"]["volatility_b4"])))
+        + config["fee_parameters"]["volatility_params"]["volatility_b5"]*volatility.iloc[i:i+proposal_interval].iloc[-1]
+        + config["fee_parameters"]["volatility_params"]["volatility_b2"]/(1 + np.exp((volatility.iloc[i:i+proposal_interval].iloc[-1] - config["fee_parameters"]["volatility_params"]["volatility_b3"])/config["fee_parameters"]["volatility_params"]["volatility_b4"])))
 
-        y2 = np.log(1 + np.exp((interval_df['vol_to_tvl_ratio'].iloc[-1] - config['fee_parameters']['vol_tvlf_params']['vol_tvlf_b2']) /
+        y2 = np.log(1 + np.exp((vol_to_tvl_ratio.iloc[i:i+proposal_interval].iloc[-1] - config['fee_parameters']['vol_tvlf_params']['vol_tvlf_b2']) /
                               config['fee_parameters']['vol_tvlf_params']['vol_tvlf_b1']))
         
-        y3 = np.log(1 + np.exp((np.abs(interval_df['delta_delta_price'].iloc[-1]) - config['fee_parameters']['delta_delta_price_params']['delta_delta_price_a2']) /
+        y3 = np.log(1 + np.exp((np.abs(delta_delta_price.iloc[i:i+proposal_interval].iloc[-1]) - config['fee_parameters']['delta_delta_price_params']['delta_delta_price_a2']) /
                               config['fee_parameters']['delta_delta_price_params']['delta_delta_price_a1']))
 
         # Get fee bounds
@@ -201,33 +185,37 @@ def compute_fee(df: pd.DataFrame, config: dict) -> pd.DataFrame:
         fee = np.clip(y1 + y2 + y3, min_fee, max_fee)
         
         # Assign fee components to all rows in this interval
-        fee_df.loc[interval_df.index, 'fee'] = fee
-        fee_df.loc[interval_df.index, 'fee_volatility'] = y1
-        fee_df.loc[interval_df.index, 'fee_vol_to_tvl_ratio'] = y2  
-        fee_df.loc[interval_df.index, 'fee_delta_delta_price'] = y3
+        fee_df.loc[interval_ts.index, 'fee'] = fee
+        fee_df.loc[interval_ts.index, 'fee_volatility'] = y1
+        fee_df.loc[interval_ts.index, 'fee_vol_to_tvl_ratio'] = y2  
+        fee_df.loc[interval_ts.index, 'fee_delta_delta_price'] = y3
+        fee_df.loc[interval_ts.index, 'timestamp'] = interval_ts
 
     return fee_df
 
-def build_distribution_plots(df: pd.DataFrame) -> None:
+
+# Plotting functions
+
+def build_distribution_plots(volatility: pd.Series, vol_to_tvl_ratio: pd.Series, delta_delta_price: pd.Series) -> None:
     """
     Build the kernel density distribution plots for the metrics
     """
     fig = make_subplots(rows=3, cols=1, subplot_titles=("Volatility", "Volume to TVL (Filtered) Ratio", "Delta Delta Price"))
-    fig.add_trace(go.Histogram(x=df['volatility'], name='Volatility', xbins=dict(size=1.25)), row=1, col=1)
-    fig.add_trace(go.Histogram(x=df['vol_to_tvl_ratio'], name='Volume to TVL (Filtered) Ratio', xbins=dict(size=0.005)), row=2, col=1)
-    fig.add_trace(go.Histogram(x=df['delta_delta_price'], name='Delta Delta Price', xbins=dict(size=0.005)), row=3, col=1)
+    fig.add_trace(go.Histogram(x=volatility, name='Volatility', xbins=dict(size=1.25)), row=1, col=1)
+    fig.add_trace(go.Histogram(x=vol_to_tvl_ratio, name='Volume to TVL (Filtered) Ratio', xbins=dict(size=0.005)), row=2, col=1)
+    fig.add_trace(go.Histogram(x=delta_delta_price, name='Delta Delta Price', xbins=dict(size=0.005)), row=3, col=1)
 
     fig.show()
 
-def build_price_plots(df: pd.DataFrame, ts: pd.Series) -> None:
+def build_price_plots(price: pd.Series, volatility: pd.Series, vol_to_tvl_ratio: pd.Series, delta_delta_price: pd.Series, ts: pd.Series) -> None:
     """
     Build the price plots for the metrics across time
     """
     fig = make_subplots(rows=4, cols=1, subplot_titles=("Price", "Volatility", "Volume to TVL (Filtered) Ratio", "Delta Delta Price", "Delta Delta Price Smooth"))
-    fig.add_trace(go.Scatter(x=ts, y=df['price'], name='Price'), row=1, col=1)
-    fig.add_trace(go.Scatter(x=ts, y=df['volatility'], name='Volatility'), row=2, col=1)
-    fig.add_trace(go.Scatter(x=ts, y=df["vol_to_tvl_ratio"], name='Volume to TVL (Filtered) Ratio'), row=3, col=1)
-    fig.add_trace(go.Scatter(x=ts, y=df['delta_delta_price'], name='Delta Delta Price'), row=4, col=1)
+    fig.add_trace(go.Scatter(x=ts, y=price, name='Price'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=ts, y=volatility, name='Volatility'), row=2, col=1)
+    fig.add_trace(go.Scatter(x=ts, y=vol_to_tvl_ratio, name='Volume to TVL (Filtered) Ratio'), row=3, col=1)
+    fig.add_trace(go.Scatter(x=ts, y=delta_delta_price, name='Delta Delta Price'), row=4, col=1)
     fig.show()
 
 def build_fee_plots(df: pd.DataFrame, ts: pd.Series) -> None:  
@@ -255,20 +243,21 @@ def build_fee_component_plots(ramses_df: pd.DataFrame, df: pd.DataFrame) -> None
     fig.update_layout(title="Fee Component Breakdown Over Time")
     fig.show()
 
+# Main function
+
 if __name__ == "__main__":
     config = read_fee_config("./configs/fee_config.json")
     ramses_df = read_ramses_calibration(os.path.join(config["data_dir"], "calibration", "ramses.csv"))
     pool_dfs = read_data(config["data_dir"])
     delta_price_series = read_delta_price(config["data_dir"])
     for pool_address, df in pool_dfs.items():
-        ts = pd.to_datetime(df['timestamp'], unit='s')
-        df['volatility'] = compute_volatility(config["first_volatility_gamma"], config["second_volatility_gamma"], df)
-        df['tvl_filtered'] = tvl_filter(df, config["tvl_window"], config["tvl_sigma"])
-        df['vol_to_tvl_ratio'] = vol_to_tvl_ratio(df)
+        df['volatility'] = compute_volatility(config["volatility_parameters"]["first_volatility_gamma"], config["volatility_parameters"]["second_volatility_gamma"], df['price'])
+        df['tvl_filtered'] = metric_filter(df['tvl_usd'], config["tvl_filter_parameters"]["tvl_window"], config["tvl_filter_parameters"]["tvl_sigma"])
+        df['price_filtered'] = metric_filter(df['price'], config["price_filter_parameters"]["price_window"], config["price_filter_parameters"]["price_sigma"])
+        df['vol_to_tvl_ratio'] = vol_to_tvl_ratio(df['volume_24h_usd'], df['tvl_filtered'])
         df['delta_delta_price'] = compute_delta_delta_price(df, delta_price_series)
-        build_distribution_plots(df)
-        build_price_plots(df, ts)
-        fee_df = compute_fee(df, config)
-        fee_df['timestamp'] = ts
-        build_fee_plots(fee_df, ts)
+        build_distribution_plots(df['volatility'], df['vol_to_tvl_ratio'], df['delta_delta_price'])
+        build_price_plots(df['price_filtered'], df['volatility'], df['vol_to_tvl_ratio'], df['delta_delta_price'], df['timestamp'])
+        fee_df = compute_fee(df['volatility'], df['vol_to_tvl_ratio'], df['delta_delta_price'], df['timestamp'], config)
+        build_fee_plots(fee_df, fee_df['timestamp'])
         build_fee_component_plots(ramses_df, fee_df)

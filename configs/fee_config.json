@@ -1,11 +1,18 @@
 {
     "data_dir": "./data",
-    "first_volatility_gamma": 0.02,
     "proposal_interval": 15,
-    "second_volatility_gamma": 0.1,
-    "tvl_window": 11,
-    "tvl_sigma": 3,
-    "delta_delta_price_gamma": 0.75,
+    "volatility_parameters": {
+        "first_volatility_gamma": 0.02,
+        "second_volatility_gamma": 0.1
+    },
+    "tvl_filter_parameters": {
+        "tvl_window": 11,
+        "tvl_sigma": 3
+    },
+    "price_filter_parameters": {
+        "price_window": 11,
+        "price_sigma": 3
+    },
     "fee_parameters": {
         "volatility_params": {
             "volatility_b1": 0.04,
