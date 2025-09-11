@@ -145,6 +145,7 @@ if __name__ == "__main__":
     tvls=[]
     prices=[]
     while True:
+        print("Reading data")
         gliquid_pool_metrics = read_data(config["data_dir"])
         delta_price = read_delta_price(config["data_dir"])
         for pool_metric in gliquid_pool_metrics:
@@ -153,11 +154,13 @@ if __name__ == "__main__":
             prices.append(pool_metric['price'])
             tvls.append(pool_metric['tvl'])
             if len(tvls) >= config["start_threshold"]*config["pull_interval"] and len(prices) >= config["start_threshold"]*config["pull_interval"]:
+                print("Warmup complete")
                 pool_metric["filtered_tvl"] = tvl_filter(tvls, config["tvl_window"], config["tvl_sigma"])
                 pool_metric['vol_to_tvl_ratio'] = vol_to_tvl_ratio(pool_metric['volume24h'], pool_metric['filtered_tvl'])
                 pool_metric["volatility"] = compute_volatility(config["first_volatility_gamma"], config["second_volatility_gamma"], prices)
                 if len(tvls) % config["proposal_interval"] == 0:
                     pool_metric["fee"] = compute_fee(pool_metric["volatility"], pool_metric['vol_to_tvl_ratio'], pool_metric['delta_delta_price'], config)
-        print(gliquid_pool_metrics)
+                    print("Computing fee")
+                    print(pool_metric["fee"])
         time.sleep(config["pull_interval"])
  
